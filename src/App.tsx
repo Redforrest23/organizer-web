@@ -428,7 +428,6 @@ export default function App() {
     };
 
     const toggleChecklistItemInline = async (
-        taskId: string,
         itemId: string,
         currentChecked: boolean
     ) => {
@@ -743,7 +742,6 @@ export default function App() {
                                                                                     checked={item.is_checked}
                                                                                     onChange={() =>
                                                                                         toggleChecklistItemInline(
-                                                                                            task.id,
                                                                                             item.id,
                                                                                             item.is_checked
                                                                                         )
