@@ -1,0 +1,29 @@
+{
+    "name": "organizer-web",
+    "version": "1.0.0",
+    "private": true,
+    "homepage": "https://redforrest23.github.io/organizer-web",
+    "dependencies": {
+        "@supabase/supabase-js": "^2.39.0",
+        "lucide-react": "^0.263.1",
+        "react": "^18.2.0",
+        "react-beautiful-dnd": "^13.1.1",
+        "react-dom": "^18.2.0"
+    },
+    "devDependencies": {
+        "@types/react": "^18.2.0",
+        "@types/react-beautiful-dnd": "^13.1.4",
+        "@types/react-dom": "^18.2.0",
+        "@vitejs/plugin-react": "^4.2.0",
+        "gh-pages": "^6.1.0",
+        "typescript": "^5.0.0",
+        "vite": "^7.1.9"
+    },
+    "scripts": {
+        "dev": "vite",
+        "build": "tsc && vite build",
+        "preview": "vite preview",
+        "predeploy": "npm run build",
+        "deploy": "gh-pages -d dist"
+    }
+}
