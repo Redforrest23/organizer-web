@@ -6,6 +6,12 @@ export default defineConfig({
     base: '/organizer-web/',
     build: {
         outDir: 'dist',
-        sourcemap: false
-    }
+        sourcemap: false,
+        assetsDir: 'assets',
+        rollupOptions: {
+            output: {
+                manualChunks: undefined,
+            },
+        },
+    },
 });
