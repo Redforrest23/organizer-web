@@ -632,7 +632,8 @@ export default function App() {
                 <button
                     onClick={() => setActiveTab('main')}
                     style={activeTab === 'main' ? styles.tabActive : styles.tab}
-                ></button>Main ({tasks.filter(t => !t.is_completed).length})
+                >Main ({tasks.filter(t => !t.is_completed).length})
+                </button>
                 <button
                     onClick={() => setActiveTab('upcoming')}
                     style={activeTab === 'upcoming' ? styles.tabActive : styles.tab}
