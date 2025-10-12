@@ -668,6 +668,67 @@ export default function App() {
                                     {task.due_date && (
                                         <div style={styles.pinnedDate}>{formatDueDate(task.due_date)}</div>
                                     )}
+
+                                    {/* Expanded content for pinned tasks */}
+                                    {expandedTasks.has(task.id) && (
+                                        <div style={styles.taskExpanded}>
+                                            {task.description && (
+                                                <p style={styles.description}>{task.description}</p>
+                                            )}
+
+                                            {task.checklist_items && task.checklist_items.length > 0 && (
+                                                <div style={styles.checklistSection}>
+                                                    {task.checklist_items.map((item) => (
+                                                        <div key={item.id} style={styles.checklistItem}>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={item.is_checked}
+                                                                onChange={() => toggleChecklistItemInline(item.id, item.is_checked)}
+                                                                style={styles.checkbox}
+                                                            />
+                                                            <span style={{
+                                                                ...styles.checklistText,
+                                                                ...(item.is_checked ? styles.checklistChecked : {}),
+                                                            }}>
+                                                                {item.text}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            <div style={styles.actionButtons}>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        toggleComplete(task);
+                                                    }}
+                                                    style={styles.actionButton}
+                                                >
+                                                    <Check size={16} />
+                                                    {task.is_completed ? 'Uncomplete' : 'Complete'}
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        openModal(task);
+                                                    }}
+                                                    style={styles.actionButton}
+                                                >
+                                                    <Edit2 size={16} /> Edit
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        deleteTask(task.id);
+                                                    }}
+                                                    style={styles.actionButtonDanger}
+                                                >
+                                                    <Trash2 size={16} /> Delete
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                         </div>
