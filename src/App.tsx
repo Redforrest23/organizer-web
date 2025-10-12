@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
-import { Calendar, Plus, Search, Menu, X, Check, Edit2, Trash2, Bell } from 'lucide-react';
+import { Calendar, Plus, Search, Menu, X, Check, Edit2, Trash2, Bell, Settings } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { Task, ChecklistItem, TabType } from './types';
 
@@ -22,6 +22,7 @@ export default function App() {
     // Modal State
     const [showEditModal, setShowEditModal] = useState(false);
     const [showDescModal, setShowDescModal] = useState(false);
+    const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [editingTask, setEditingTask] = useState<Task | null>(null);
 
     // Form State
@@ -31,10 +32,16 @@ export default function App() {
     const [formIsPinned, setFormIsPinned] = useState(false);
     const [formChecklist, setFormChecklist] = useState<ChecklistItem[]>([]);
     const [newChecklistText, setNewChecklistText] = useState('');
+    const [formIsRecurring, setFormIsRecurring] = useState(false);
+    const [formRecurringType, setFormRecurringType] = useState('simple');
+    const [formRecurringInterval, setFormRecurringInterval] = useState('weekly');
 
     // Notification State
     const [notificationsEnabled, setNotificationsEnabled] = useState(false);
     const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+    const [notifDayBefore, setNotifDayBefore] = useState(true);
+    const [notifDayOf, setNotifDayOf] = useState(true);
+    const [notifTwoHours, setNotifTwoHours] = useState(true);
 
     // Check auth session on mount
     useEffect(() => {
@@ -76,6 +83,12 @@ export default function App() {
 
             if (permission === 'granted') {
                 alert('✅ Notifications enabled! You will receive reminders for tasks with due dates.');
+                // Reschedule all notifications
+                tasks.forEach(task => {
+                    if (task.due_date && !task.is_completed) {
+                        scheduleNotifications(task);
+                    }
+                });
             } else {
                 alert('❌ Notifications disabled. Enable them in your browser settings to receive reminders.');
             }
@@ -117,21 +130,27 @@ export default function App() {
             }
         };
 
-        // Day before at 9 AM
-        const dayBefore = new Date(dueDate);
-        dayBefore.setDate(dayBefore.getDate() - 1);
-        dayBefore.setHours(9, 0, 0, 0);
-        scheduleNotification(dayBefore, 'Due tomorrow');
+        // Day before at 9 AM (if enabled)
+        if (notifDayBefore) {
+            const dayBefore = new Date(dueDate);
+            dayBefore.setDate(dayBefore.getDate() - 1);
+            dayBefore.setHours(9, 0, 0, 0);
+            scheduleNotification(dayBefore, 'Due tomorrow');
+        }
 
-        // Day of at 9 AM
-        const dayOf = new Date(dueDate);
-        dayOf.setHours(9, 0, 0, 0);
-        scheduleNotification(dayOf, 'Due today');
+        // Day of at 9 AM (if enabled)
+        if (notifDayOf) {
+            const dayOf = new Date(dueDate);
+            dayOf.setHours(9, 0, 0, 0);
+            scheduleNotification(dayOf, 'Due today');
+        }
 
-        // 2 hours before
-        const twoHoursBefore = new Date(dueDate);
-        twoHoursBefore.setHours(twoHoursBefore.getHours() - 2);
-        scheduleNotification(twoHoursBefore, 'Due in 2 hours');
+        // 2 hours before (if enabled)
+        if (notifTwoHours) {
+            const twoHoursBefore = new Date(dueDate);
+            twoHoursBefore.setHours(twoHoursBefore.getHours() - 2);
+            scheduleNotification(twoHoursBefore, 'Due in 2 hours');
+        }
 
         // Store timeout IDs
         sessionStorage.setItem(storageKey, JSON.stringify(timeoutIds));
@@ -235,6 +254,9 @@ export default function App() {
             is_pinned: formIsPinned,
             due_date: formDueDate || null,
             position: editingTask ? editingTask.position : tasks.length,
+            is_recurring: formIsRecurring,
+            recurring_type: formIsRecurring ? formRecurringType : null,
+            recurring_interval: formIsRecurring ? formRecurringInterval : null,
         };
 
         if (editingTask) {
@@ -327,6 +349,51 @@ export default function App() {
     const toggleComplete = async (task: Task) => {
         const newCompleted = !task.is_completed;
 
+        // Handle recurring tasks
+        if (newCompleted && task.is_recurring) {
+            // Create new recurring task
+            let newTitle = task.title;
+
+            if (task.recurring_type === 'progressive') {
+                // Extract number and increment
+                const match = task.title.match(/(\d+)/);
+                if (match) {
+                    const currentNum = parseInt(match[0]);
+                    newTitle = task.title.replace(/\d+/, String(currentNum + 1));
+                }
+            }
+
+            // Calculate next due date
+            let nextDueDate = null;
+            if (task.due_date) {
+                const currentDue = new Date(task.due_date);
+                nextDueDate = new Date(currentDue);
+
+                if (task.recurring_interval === 'daily') {
+                    nextDueDate.setDate(nextDueDate.getDate() + 1);
+                } else if (task.recurring_interval === 'weekly') {
+                    nextDueDate.setDate(nextDueDate.getDate() + 7);
+                } else if (task.recurring_interval === 'monthly') {
+                    nextDueDate.setMonth(nextDueDate.getMonth() + 1);
+                }
+            }
+
+            // Create new task
+            const newTaskData = {
+                title: newTitle,
+                description: task.recurring_type === 'progressive' ? '' : task.description,
+                is_pinned: task.is_pinned,
+                due_date: nextDueDate?.toISOString() || null,
+                position: task.position,
+                is_recurring: true,
+                recurring_type: task.recurring_type,
+                recurring_interval: task.recurring_interval,
+            };
+
+            await supabase.from('tasks').insert([newTaskData]);
+        }
+
+        // Mark current task as complete
         const { error } = await supabase
             .from('tasks')
             .update({
@@ -360,6 +427,9 @@ export default function App() {
             setFormDueDate(task.due_date ? task.due_date.slice(0, 16) : '');
             setFormIsPinned(task.is_pinned);
             setFormChecklist(task.checklist_items || []);
+            setFormIsRecurring(task.is_recurring);
+            setFormRecurringType(task.recurring_type || 'simple');
+            setFormRecurringInterval(task.recurring_interval || 'weekly');
         } else {
             setEditingTask(null);
             setFormTitle('');
@@ -367,6 +437,9 @@ export default function App() {
             setFormDueDate('');
             setFormIsPinned(false);
             setFormChecklist([]);
+            setFormIsRecurring(false);
+            setFormRecurringType('simple');
+            setFormRecurringInterval('weekly');
         }
         setShowEditModal(true);
     };
@@ -546,11 +619,6 @@ export default function App() {
 
     const pinnedTasks = getFilteredTasks().filter((t) => t.is_pinned);
     const regularTasks = getFilteredTasks().filter((t) => !t.is_pinned);
-
-    // Render continues in next part...
-
-    // ... (continued from Part 1)
-
     // Auth Screen
     if (!session) {
         return (
@@ -571,7 +639,7 @@ export default function App() {
                         placeholder="Password (min 6 characters)"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && (isSignUp ? signUp() : signIn())}
+                        onKeyDown={(e) => e.key === 'Enter' && (isSignUp ? signUp() : signIn())}
                         style={styles.input}
                         autoComplete="current-password"
                     />
@@ -600,12 +668,10 @@ export default function App() {
             <div style={styles.header}>
                 <h1 style={styles.headerTitle}>📋 Organizer</h1>
                 <div style={styles.headerButtons}>
-                    {notificationPermission === 'default' && (
-                        <button onClick={requestNotificationPermission} style={styles.notifButton}>
-                            <Bell size={18} /> Enable
-                        </button>
-                    )}
                     {notificationsEnabled && <Bell size={20} color="#58a6ff" />}
+                    <button onClick={() => setShowSettingsModal(true)} style={styles.settingsButton}>
+                        <Settings size={18} />
+                    </button>
                     <button onClick={() => openModal()} style={styles.addButton}>
                         <Plus size={20} /> New
                     </button>
@@ -632,7 +698,8 @@ export default function App() {
                 <button
                     onClick={() => setActiveTab('main')}
                     style={activeTab === 'main' ? styles.tabActive : styles.tab}
-                >Main ({tasks.filter(t => !t.is_completed).length})
+                >
+                    Main ({tasks.filter(t => !t.is_completed).length})
                 </button>
                 <button
                     onClick={() => setActiveTab('upcoming')}
@@ -664,7 +731,10 @@ export default function App() {
                                     }}
                                     onClick={() => toggleExpanded(task.id)}
                                 >
-                                    <div style={styles.pinnedTitle}>{task.title}</div>
+                                    <div style={styles.pinnedTitle}>
+                                        {task.title}
+                                        {task.is_recurring && <span style={{ marginLeft: '4px' }}>🔄</span>}
+                                    </div>
                                     {task.due_date && (
                                         <div style={styles.pinnedDate}>{formatDueDate(task.due_date)}</div>
                                     )}
@@ -772,7 +842,10 @@ export default function App() {
                                                             >
                                                                 <Menu size={18} color="#8b949e" />
                                                             </div>
-                                                            <span style={styles.taskTitle}>{task.title}</span>
+                                                            <span style={styles.taskTitle}>
+                                                                {task.title}
+                                                                {task.is_recurring && <span style={{ marginLeft: '4px' }}>🔄</span>}
+                                                            </span>
                                                             {task.due_date && (
                                                                 <span style={styles.dueDateBadge}>
                                                                     {formatDueDate(task.due_date)}
@@ -834,6 +907,12 @@ export default function App() {
                                                                     </div>
                                                                 )}
 
+                                                                {task.is_recurring && (
+                                                                    <div style={styles.recurringBadge}>
+                                                                        🔄 Repeats {task.recurring_interval} ({task.recurring_type})
+                                                                    </div>
+                                                                )}
+
                                                                 {/* Action Buttons */}
                                                                 <div style={styles.actionButtons}>
                                                                     <button
@@ -881,148 +960,265 @@ export default function App() {
                 )}
             </div>
 
-            {/* Edit Task Modal */}
-            {
-                showEditModal && (
-                    <div style={styles.modalOverlay} onClick={closeModal}>
-                        <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-                            <div style={styles.modalHeader}>
-                                <h2 style={styles.modalTitle}>
-                                    {editingTask ? 'Edit Task' : 'New Task'}
-                                </h2>
-                                <button onClick={closeModal} style={styles.closeButton}>
-                                    <X size={24} />
+            {/* Settings Modal */}
+            {showSettingsModal && (
+                <div style={styles.modalOverlay} onClick={() => setShowSettingsModal(false)}>
+                    <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+                        <div style={styles.modalHeader}>
+                            <h2 style={styles.modalTitle}>⚙️ Settings</h2>
+                            <button onClick={() => setShowSettingsModal(false)} style={styles.closeButton}>
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        <div style={styles.modalBody}>
+                            <h3 style={styles.sectionSubtitle}>🔔 Notifications</h3>
+
+                            {notificationPermission === 'default' && (
+                                <button onClick={requestNotificationPermission} style={styles.button}>
+                                    <Bell size={18} /> Enable Notifications
                                 </button>
+                            )}
+
+                            {notificationPermission === 'denied' && (
+                                <p style={styles.helpText}>
+                                    ❌ Notifications are blocked. Enable them in your browser settings.
+                                </p>
+                            )}
+
+                            {notificationsEnabled && (
+                                <div style={{ marginTop: '16px' }}>
+                                    <p style={styles.helpText}>✅ Notifications are enabled</p>
+
+                                    <h4 style={{ ...styles.label, marginTop: '16px' }}>Reminder Times</h4>
+
+                                    <label style={styles.checkboxLabel}>
+                                        <input
+                                            type="checkbox"
+                                            checked={notifDayBefore}
+                                            onChange={(e) => setNotifDayBefore(e.target.checked)}
+                                            style={styles.checkbox}
+                                        />
+                                        <span style={{ marginLeft: '8px' }}>Day before at 9 AM</span>
+                                    </label>
+
+                                    <label style={styles.checkboxLabel}>
+                                        <input
+                                            type="checkbox"
+                                            checked={notifDayOf}
+                                            onChange={(e) => setNotifDayOf(e.target.checked)}
+                                            style={styles.checkbox}
+                                        />
+                                        <span style={{ marginLeft: '8px' }}>Day of at 9 AM</span>
+                                    </label>
+
+                                    <label style={styles.checkboxLabel}>
+                                        <input
+                                            type="checkbox"
+                                            checked={notifTwoHours}
+                                            onChange={(e) => setNotifTwoHours(e.target.checked)}
+                                            style={styles.checkbox}
+                                        />
+                                        <span style={{ marginLeft: '8px' }}>2 hours before due time</span>
+                                    </label>
+                                </div>
+                            )}
+                        </div>
+
+                        <div style={styles.modalFooter}>
+                            <button onClick={() => setShowSettingsModal(false)} style={styles.saveButton}>
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Task Modal */}
+            {showEditModal && (
+                <div style={styles.modalOverlay} onClick={closeModal}>
+                    <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+                        <div style={styles.modalHeader}>
+                            <h2 style={styles.modalTitle}>
+                                {editingTask ? 'Edit Task' : 'New Task'}
+                            </h2>
+                            <button onClick={closeModal} style={styles.closeButton}>
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        <div style={styles.modalBody}>
+                            <input
+                                type="text"
+                                placeholder="Task title"
+                                value={formTitle}
+                                onChange={(e) => setFormTitle(e.target.value)}
+                                style={styles.input}
+                                autoFocus
+                            />
+
+                            <textarea
+                                placeholder="Description (optional)"
+                                value={formDescription}
+                                onChange={(e) => setFormDescription(e.target.value)}
+                                style={styles.textarea}
+                                rows={4}
+                            />
+
+                            <div style={styles.formGroup}>
+                                <label style={styles.label}>Due Date</label>
+                                <input
+                                    type="datetime-local"
+                                    value={formDueDate}
+                                    onChange={(e) => setFormDueDate(e.target.value)}
+                                    style={styles.input}
+                                />
                             </div>
 
-                            <div style={styles.modalBody}>
+                            <label style={styles.checkboxLabel}>
                                 <input
-                                    type="text"
-                                    placeholder="Task title"
-                                    value={formTitle}
-                                    onChange={(e) => setFormTitle(e.target.value)}
-                                    style={styles.input}
-                                    autoFocus
+                                    type="checkbox"
+                                    checked={formIsPinned}
+                                    onChange={(e) => setFormIsPinned(e.target.checked)}
+                                    style={styles.checkbox}
                                 />
+                                <span style={{ marginLeft: '8px' }}>📌 Pin to top</span>
+                            </label>
 
-                                <textarea
-                                    placeholder="Description (optional)"
-                                    value={formDescription}
-                                    onChange={(e) => setFormDescription(e.target.value)}
-                                    style={styles.textarea}
-                                    rows={4}
-                                />
-
-                                <div style={styles.formGroup}>
-                                    <label style={styles.label}>Due Date</label>
-                                    <input
-                                        type="datetime-local"
-                                        value={formDueDate}
-                                        onChange={(e) => setFormDueDate(e.target.value)}
-                                        style={styles.input}
-                                    />
-                                </div>
-
+                            <div style={styles.recurringSection}>
+                                <h3 style={styles.sectionSubtitle}>🔄 Recurring Task</h3>
                                 <label style={styles.checkboxLabel}>
                                     <input
                                         type="checkbox"
-                                        checked={formIsPinned}
-                                        onChange={(e) => setFormIsPinned(e.target.checked)}
+                                        checked={formIsRecurring}
+                                        onChange={(e) => setFormIsRecurring(e.target.checked)}
                                         style={styles.checkbox}
                                     />
-                                    <span style={{ marginLeft: '8px' }}>📌 Pin to top</span>
+                                    <span style={{ marginLeft: '8px' }}>Make this a recurring task</span>
                                 </label>
 
-                                <div style={styles.checklistEditSection}>
-                                    <h3 style={styles.sectionSubtitle}>Checklist</h3>
-                                    {formChecklist.map((item, index) => (
-                                        <div key={item.id} style={styles.checklistEditItem}>
-                                            <input
-                                                type="checkbox"
-                                                checked={item.is_checked}
-                                                onChange={() => toggleChecklistItem(index)}
-                                                style={styles.checkbox}
-                                            />
-                                            <span style={styles.checklistText}>{item.text}</span>
-                                            <button
-                                                onClick={() => removeChecklistItem(index)}
-                                                style={styles.removeButton}
+                                {formIsRecurring && (
+                                    <>
+                                        <div style={styles.formGroup}>
+                                            <label style={styles.label}>Recurring Type</label>
+                                            <select
+                                                value={formRecurringType}
+                                                onChange={(e) => setFormRecurringType(e.target.value)}
+                                                style={styles.input}
                                             >
-                                                <X size={16} />
-                                            </button>
+                                                <option value="simple">Simple (same task repeats)</option>
+                                                <option value="progressive">Progressive (task number increments)</option>
+                                            </select>
                                         </div>
-                                    ))}
-                                    <div style={styles.addChecklistContainer}>
+
+                                        <div style={styles.formGroup}>
+                                            <label style={styles.label}>Repeat Every</label>
+                                            <select
+                                                value={formRecurringInterval}
+                                                onChange={(e) => setFormRecurringInterval(e.target.value)}
+                                                style={styles.input}
+                                            >
+                                                <option value="daily">Daily</option>
+                                                <option value="weekly">Weekly</option>
+                                                <option value="monthly">Monthly</option>
+                                            </select>
+                                        </div>
+
+                                        {formRecurringType === 'progressive' && (
+                                            <p style={styles.helpText}>
+                                                💡 Progressive tasks increment the number in the title when completed (e.g., "Task 1" → "Task 2")
+                                            </p>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+
+                            <div style={styles.checklistEditSection}>
+                                <h3 style={styles.sectionSubtitle}>Checklist</h3>
+                                {formChecklist.map((item, index) => (
+                                    <div key={item.id} style={styles.checklistEditItem}>
                                         <input
-                                            type="text"
-                                            placeholder="Add checklist item"
-                                            value={newChecklistText}
-                                            onChange={(e) => setNewChecklistText(e.target.value)}
-                                            onKeyPress={(e) => e.key === 'Enter' && addChecklistItem()}
-                                            style={styles.input}
+                                            type="checkbox"
+                                            checked={item.is_checked}
+                                            onChange={() => toggleChecklistItem(index)}
+                                            style={styles.checkbox}
                                         />
-                                        <button onClick={addChecklistItem} style={styles.addChecklistButton}>
-                                            <Plus size={18} />
+                                        <span style={styles.checklistText}>{item.text}</span>
+                                        <button
+                                            onClick={() => removeChecklistItem(index)}
+                                            style={styles.removeButton}
+                                        >
+                                            <X size={16} />
                                         </button>
                                     </div>
+                                ))}
+                                <div style={styles.addChecklistContainer}>
+                                    <input
+                                        type="text"
+                                        placeholder="Add checklist item"
+                                        value={newChecklistText}
+                                        onChange={(e) => setNewChecklistText(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && addChecklistItem()}
+                                        style={styles.input}
+                                    />
+                                    <button onClick={addChecklistItem} style={styles.addChecklistButton}>
+                                        <Plus size={18} />
+                                    </button>
                                 </div>
                             </div>
+                        </div>
 
-                            <div style={styles.modalFooter}>
-                                <button onClick={closeModal} style={styles.cancelButton}>
-                                    Cancel
-                                </button>
-                                <button onClick={saveTask} style={styles.saveButton}>
-                                    {editingTask ? 'Update' : 'Create'}
-                                </button>
-                            </div>
+                        <div style={styles.modalFooter}>
+                            <button onClick={closeModal} style={styles.cancelButton}>
+                                Cancel
+                            </button>
+                            <button onClick={saveTask} style={styles.saveButton}>
+                                {editingTask ? 'Update' : 'Create'}
+                            </button>
                         </div>
                     </div>
-                )
-            }
+                </div>
+            )}
 
             {/* Description Editor Modal */}
-            {
-                showDescModal && (
-                    <div style={styles.modalOverlay} onClick={() => setShowDescModal(false)}>
-                        <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-                            <div style={styles.modalHeader}>
-                                <h2 style={styles.modalTitle}>Edit Description</h2>
-                                <button onClick={() => setShowDescModal(false)} style={styles.closeButton}>
-                                    <X size={24} />
-                                </button>
-                            </div>
+            {showDescModal && (
+                <div style={styles.modalOverlay} onClick={() => setShowDescModal(false)}>
+                    <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+                        <div style={styles.modalHeader}>
+                            <h2 style={styles.modalTitle}>Edit Description</h2>
+                            <button onClick={() => setShowDescModal(false)} style={styles.closeButton}>
+                                <X size={24} />
+                            </button>
+                        </div>
 
-                            <div style={styles.modalBody}>
-                                <textarea
-                                    value={formDescription}
-                                    onChange={(e) => setFormDescription(e.target.value)}
-                                    style={styles.textareaLarge}
-                                    rows={15}
-                                    autoFocus
-                                    placeholder="Enter task description..."
-                                />
-                            </div>
+                        <div style={styles.modalBody}>
+                            <textarea
+                                value={formDescription}
+                                onChange={(e) => setFormDescription(e.target.value)}
+                                style={styles.textareaLarge}
+                                rows={15}
+                                autoFocus
+                                placeholder="Enter task description..."
+                            />
+                        </div>
 
-                            <div style={styles.modalFooter}>
-                                <button
-                                    onClick={() => setShowDescModal(false)}
-                                    style={styles.cancelButton}
-                                >
-                                    Cancel
-                                </button>
-                                <button onClick={saveDescription} style={styles.saveButton}>
-                                    Save
-                                </button>
-                            </div>
+                        <div style={styles.modalFooter}>
+                            <button
+                                onClick={() => setShowDescModal(false)}
+                                style={styles.cancelButton}
+                            >
+                                Cancel
+                            </button>
+                            <button onClick={saveDescription} style={styles.saveButton}>
+                                Save
+                            </button>
                         </div>
                     </div>
-                )
-            }
-        </div >
+                </div>
+            )}
+        </div>
     );
 }
-
 // Styles
 const styles: { [key: string]: React.CSSProperties } = {
     container: {
@@ -1070,6 +1266,18 @@ const styles: { [key: string]: React.CSSProperties } = {
         gap: '8px',
         alignItems: 'center',
         flexWrap: 'wrap',
+    },
+    settingsButton: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '8px 12px',
+        backgroundColor: '#21262d',
+        color: '#c9d1d9',
+        border: '1px solid #30363d',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        fontSize: '14px',
     },
     notifButton: {
         display: 'flex',
@@ -1298,6 +1506,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     fullDate: {
         fontSize: '13px',
     },
+    recurringBadge: {
+        display: 'inline-block',
+        fontSize: '12px',
+        padding: '4px 8px',
+        backgroundColor: '#1f6feb',
+        color: 'white',
+        borderRadius: '4px',
+        marginTop: '8px',
+    },
     actionButtons: {
         display: 'flex',
         gap: '8px',
@@ -1443,6 +1660,13 @@ const styles: { [key: string]: React.CSSProperties } = {
         marginBottom: '16px',
         cursor: 'pointer',
     },
+    recurringSection: {
+        marginTop: '20px',
+        padding: '16px',
+        backgroundColor: '#0d1117',
+        borderRadius: '6px',
+        border: '1px solid #30363d',
+    },
     checklistEditSection: {
         marginTop: '20px',
     },
@@ -1511,6 +1735,12 @@ const styles: { [key: string]: React.CSSProperties } = {
         color: '#f85149',
         fontSize: '13px',
         marginBottom: '12px',
+    },
+    helpText: {
+        fontSize: '13px',
+        color: '#8b949e',
+        lineHeight: '1.5',
+        marginTop: '8px',
     },
     cancelButton: {
         padding: '10px 20px',
