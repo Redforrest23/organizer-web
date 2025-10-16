@@ -619,6 +619,7 @@ export default function App() {
 
     const pinnedTasks = getFilteredTasks().filter((t) => t.is_pinned);
     const regularTasks = getFilteredTasks().filter((t) => !t.is_pinned);
+
     // Auth Screen
     if (!session) {
         return (
@@ -721,8 +722,10 @@ export default function App() {
                 {pinnedTasks.length > 0 && (
                     <div style={styles.pinnedSection}>
                         <h2 style={styles.sectionTitle}>📌 Pinned</h2>
+
+                        {/* Compact unexpanded pinned tasks */}
                         <div style={styles.pinnedGrid}>
-                            {pinnedTasks.map((task) => (
+                            {pinnedTasks.filter(t => !expandedTasks.has(t.id)).map((task) => (
                                 <div
                                     key={task.id}
                                     style={{
@@ -738,9 +741,36 @@ export default function App() {
                                     {task.due_date && (
                                         <div style={styles.pinnedDate}>{formatDueDate(task.due_date)}</div>
                                     )}
+                                </div>
+                            ))}
+                        </div>
 
-                                    {/* Expanded content for pinned tasks */}
-                                    {expandedTasks.has(task.id) && (
+                        {/* Expanded pinned tasks - full width below */}
+                        {pinnedTasks.filter(t => expandedTasks.has(t.id)).length > 0 && (
+                            <div style={styles.expandedPinnedSection}>
+                                {pinnedTasks.filter(t => expandedTasks.has(t.id)).map((task) => (
+                                    <div
+                                        key={task.id}
+                                        style={{
+                                            ...styles.expandedPinnedCard,
+                                            ...(isOverdue(task) ? styles.taskOverdue : {}),
+                                        }}
+                                    >
+                                        <div
+                                            style={styles.expandedPinnedHeader}
+                                            onClick={() => toggleExpanded(task.id)}
+                                        >
+                                            <span style={styles.taskTitle}>
+                                                📌 {task.title}
+                                                {task.is_recurring && <span style={{ marginLeft: '4px' }}>🔄</span>}
+                                            </span>
+                                            {task.due_date && (
+                                                <span style={styles.dueDateBadge}>
+                                                    {formatDueDate(task.due_date)}
+                                                </span>
+                                            )}
+                                        </div>
+
                                         <div style={styles.taskExpanded}>
                                             {task.description && (
                                                 <p style={styles.description}>{task.description}</p>
@@ -798,10 +828,10 @@ export default function App() {
                                                 </button>
                                             </div>
                                         </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -817,129 +847,128 @@ export default function App() {
                                 >
                                     {regularTasks.map((task, index) => {
                                         const isExpanded = expandedTasks.has(task.id);
-                                        return (
-                                            <Draggable key={task.id} draggableId={task.id} index={index}>
-                                                {(provided, snapshot) => (
+                                        return (<Draggable key={task.id} draggableId={task.id} index={index}>
+                                            {(provided, snapshot) => (
+                                                <div
+                                                    ref={provided.innerRef}
+                                                    {...provided.draggableProps}
+                                                    style={{
+                                                        ...styles.taskCard,
+                                                        ...provided.draggableProps.style,
+                                                        ...(isOverdue(task) ? styles.taskOverdue : {}),
+                                                        ...(snapshot.isDragging ? styles.taskDragging : {}),
+                                                    }}
+                                                >
+                                                    {/* Task Header */}
                                                     <div
-                                                        ref={provided.innerRef}
-                                                        {...provided.draggableProps}
-                                                        style={{
-                                                            ...styles.taskCard,
-                                                            ...provided.draggableProps.style,
-                                                            ...(isOverdue(task) ? styles.taskOverdue : {}),
-                                                            ...(snapshot.isDragging ? styles.taskDragging : {}),
-                                                        }}
+                                                        style={styles.taskHeader}
+                                                        onClick={() => toggleExpanded(task.id)}
                                                     >
-                                                        {/* Task Header */}
                                                         <div
-                                                            style={styles.taskHeader}
-                                                            onClick={() => toggleExpanded(task.id)}
+                                                            {...provided.dragHandleProps}
+                                                            style={styles.dragHandle}
+                                                            onClick={(e) => e.stopPropagation()}
                                                         >
-                                                            <div
-                                                                {...provided.dragHandleProps}
-                                                                style={styles.dragHandle}
-                                                                onClick={(e) => e.stopPropagation()}
-                                                            >
-                                                                <Menu size={18} color="#8b949e" />
-                                                            </div>
-                                                            <span style={styles.taskTitle}>
-                                                                {task.title}
-                                                                {task.is_recurring && <span style={{ marginLeft: '4px' }}>🔄</span>}
-                                                            </span>
-                                                            {task.due_date && (
-                                                                <span style={styles.dueDateBadge}>
-                                                                    {formatDueDate(task.due_date)}
-                                                                </span>
-                                                            )}
+                                                            <Menu size={18} color="#8b949e" />
                                                         </div>
-
-                                                        {/* Expanded Content */}
-                                                        {isExpanded && (
-                                                            <div style={styles.taskExpanded}>
-                                                                {task.description && (
-                                                                    <div style={styles.descriptionSection}>
-                                                                        <p style={styles.description}>{task.description}</p>
-                                                                        <button
-                                                                            onClick={() => openDescriptionEditor(task)}
-                                                                            style={styles.editDescButton}
-                                                                        >
-                                                                            <Edit2 size={14} /> Edit
-                                                                        </button>
-                                                                    </div>
-                                                                )}
-
-                                                                {task.checklist_items && task.checklist_items.length > 0 && (
-                                                                    <div style={styles.checklistSection}>
-                                                                        {task.checklist_items.map((item) => (
-                                                                            <div key={item.id} style={styles.checklistItem}>
-                                                                                <input
-                                                                                    type="checkbox"
-                                                                                    checked={item.is_checked}
-                                                                                    onChange={() =>
-                                                                                        toggleChecklistItemInline(
-                                                                                            item.id,
-                                                                                            item.is_checked
-                                                                                        )
-                                                                                    }
-                                                                                    style={styles.checkbox}
-                                                                                />
-                                                                                <span
-                                                                                    style={{
-                                                                                        ...styles.checklistText,
-                                                                                        ...(item.is_checked
-                                                                                            ? styles.checklistChecked
-                                                                                            : {}),
-                                                                                    }}
-                                                                                >
-                                                                                    {item.text}
-                                                                                </span>
-                                                                            </div>
-                                                                        ))}
-                                                                    </div>
-                                                                )}
-
-                                                                {task.due_date && (
-                                                                    <div style={styles.fullDateSection}>
-                                                                        <Calendar size={14} color="#8b949e" />
-                                                                        <span style={styles.fullDate}>
-                                                                            {formatDate(task.due_date)}
-                                                                        </span>
-                                                                    </div>
-                                                                )}
-
-                                                                {task.is_recurring && (
-                                                                    <div style={styles.recurringBadge}>
-                                                                        🔄 Repeats {task.recurring_interval} ({task.recurring_type})
-                                                                    </div>
-                                                                )}
-
-                                                                {/* Action Buttons */}
-                                                                <div style={styles.actionButtons}>
-                                                                    <button
-                                                                        onClick={() => toggleComplete(task)}
-                                                                        style={styles.actionButton}
-                                                                    >
-                                                                        <Check size={16} />
-                                                                        {task.is_completed ? 'Uncomplete' : 'Complete'}
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => openModal(task)}
-                                                                        style={styles.actionButton}
-                                                                    >
-                                                                        <Edit2 size={16} /> Edit
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => deleteTask(task.id)}
-                                                                        style={styles.actionButtonDanger}
-                                                                    >
-                                                                        <Trash2 size={16} /> Delete
-                                                                    </button>
-                                                                </div>
-                                                            </div>
+                                                        <span style={styles.taskTitle}>
+                                                            {task.title}
+                                                            {task.is_recurring && <span style={{ marginLeft: '4px' }}>🔄</span>}
+                                                        </span>
+                                                        {task.due_date && (
+                                                            <span style={styles.dueDateBadge}>
+                                                                {formatDueDate(task.due_date)}
+                                                            </span>
                                                         )}
                                                     </div>
-                                                )}
-                                            </Draggable>
+
+                                                    {/* Expanded Content */}
+                                                    {isExpanded && (
+                                                        <div style={styles.taskExpanded}>
+                                                            {task.description && (
+                                                                <div style={styles.descriptionSection}>
+                                                                    <p style={styles.description}>{task.description}</p>
+                                                                    <button
+                                                                        onClick={() => openDescriptionEditor(task)}
+                                                                        style={styles.editDescButton}
+                                                                    >
+                                                                        <Edit2 size={14} /> Edit
+                                                                    </button>
+                                                                </div>
+                                                            )}
+
+                                                            {task.checklist_items && task.checklist_items.length > 0 && (
+                                                                <div style={styles.checklistSection}>
+                                                                    {task.checklist_items.map((item) => (
+                                                                        <div key={item.id} style={styles.checklistItem}>
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={item.is_checked}
+                                                                                onChange={() =>
+                                                                                    toggleChecklistItemInline(
+                                                                                        item.id,
+                                                                                        item.is_checked
+                                                                                    )
+                                                                                }
+                                                                                style={styles.checkbox}
+                                                                            />
+                                                                            <span
+                                                                                style={{
+                                                                                    ...styles.checklistText,
+                                                                                    ...(item.is_checked
+                                                                                        ? styles.checklistChecked
+                                                                                        : {}),
+                                                                                }}
+                                                                            >
+                                                                                {item.text}
+                                                                            </span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+
+                                                            {task.due_date && (
+                                                                <div style={styles.fullDateSection}>
+                                                                    <Calendar size={14} color="#8b949e" />
+                                                                    <span style={styles.fullDate}>
+                                                                        {formatDate(task.due_date)}
+                                                                    </span>
+                                                                </div>
+                                                            )}
+
+                                                            {task.is_recurring && (
+                                                                <div style={styles.recurringBadge}>
+                                                                    🔄 Repeats {task.recurring_interval} ({task.recurring_type})
+                                                                </div>
+                                                            )}
+
+                                                            {/* Action Buttons */}
+                                                            <div style={styles.actionButtons}>
+                                                                <button
+                                                                    onClick={() => toggleComplete(task)}
+                                                                    style={styles.actionButton}
+                                                                >
+                                                                    <Check size={16} />
+                                                                    {task.is_completed ? 'Uncomplete' : 'Complete'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => openModal(task)}
+                                                                    style={styles.actionButton}
+                                                                >
+                                                                    <Edit2 size={16} /> Edit
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => deleteTask(task.id)}
+                                                                    style={styles.actionButtonDanger}
+                                                                >
+                                                                    <Trash2 size={16} /> Delete
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </Draggable>
                                         );
                                     })}
                                     {provided.placeholder}
@@ -974,22 +1003,32 @@ export default function App() {
                         <div style={styles.modalBody}>
                             <h3 style={styles.sectionSubtitle}>🔔 Notifications</h3>
 
-                            {notificationPermission === 'default' && (
-                                <button onClick={requestNotificationPermission} style={styles.button}>
-                                    <Bell size={18} /> Enable Notifications
-                                </button>
-                            )}
+                            <div style={{ marginBottom: '16px' }}>
+                                <label style={styles.checkboxLabel}>
+                                    <input
+                                        type="checkbox"
+                                        checked={notificationsEnabled && notificationPermission === 'granted'}
+                                        onChange={(e) => {
+                                            if (e.target.checked && notificationPermission === 'default') {
+                                                requestNotificationPermission();
+                                            } else if (e.target.checked && notificationPermission === 'denied') {
+                                                alert('❌ Notifications are blocked. Enable them in your browser settings.');
+                                            } else {
+                                                setNotificationsEnabled(e.target.checked);
+                                            }
+                                        }}
+                                        style={styles.checkbox}
+                                        disabled={notificationPermission === 'denied'}
+                                    />
+                                    <span style={{ marginLeft: '8px' }}>
+                                        Enable notifications
+                                        {notificationPermission === 'denied' && ' (blocked in browser)'}
+                                    </span>
+                                </label>
+                            </div>
 
-                            {notificationPermission === 'denied' && (
-                                <p style={styles.helpText}>
-                                    ❌ Notifications are blocked. Enable them in your browser settings.
-                                </p>
-                            )}
-
-                            {notificationsEnabled && (
+                            {notificationsEnabled && notificationPermission === 'granted' && (
                                 <div style={{ marginTop: '16px' }}>
-                                    <p style={styles.helpText}>✅ Notifications are enabled</p>
-
                                     <h4 style={{ ...styles.label, marginTop: '16px' }}>Reminder Times</h4>
 
                                     <label style={styles.checkboxLabel}>
@@ -1219,6 +1258,7 @@ export default function App() {
         </div>
     );
 }
+
 // Styles
 const styles: { [key: string]: React.CSSProperties } = {
     container: {
@@ -1256,6 +1296,7 @@ const styles: { [key: string]: React.CSSProperties } = {
         top: 0,
         backgroundColor: '#0d1117',
         zIndex: 100,
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
     },
     headerTitle: {
         fontSize: '24px',
@@ -1400,6 +1441,26 @@ const styles: { [key: string]: React.CSSProperties } = {
     pinnedDate: {
         fontSize: '12px',
         color: '#8b949e',
+    },
+    expandedPinnedSection: {
+        marginTop: '16px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+    },
+    expandedPinnedCard: {
+        backgroundColor: '#161b22',
+        border: '1px solid #30363d',
+        borderRadius: '8px',
+        overflow: 'hidden',
+    },
+    expandedPinnedHeader: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '16px',
+        cursor: 'pointer',
+        backgroundColor: '#1c2128',
     },
     taskList: {
         display: 'flex',
