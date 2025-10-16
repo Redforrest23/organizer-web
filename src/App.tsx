@@ -1444,8 +1444,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     },
     expandedPinnedSection: {
         marginTop: '16px',
-        display: 'flex',
-        flexDirection: 'column',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
         gap: '12px',
     },
     expandedPinnedCard: {
